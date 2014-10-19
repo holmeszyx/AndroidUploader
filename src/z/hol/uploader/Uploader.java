@@ -29,4 +29,17 @@ public interface Uploader {
      * 取消
      */
     void cancel();
+
+    /**
+     * 设置一个id
+     * @return
+     */
+    int getId();
+
+    /**
+     * 获取一个id.
+     * 如果没有设置过id, 这个id将会是临时生成的一个随机数
+     * @param id
+     */
+    void setId(int id);
 }

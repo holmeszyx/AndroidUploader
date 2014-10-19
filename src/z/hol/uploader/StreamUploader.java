@@ -1,22 +1,25 @@
 package z.hol.uploader;
 
+import org.apache.http.entity.InputStreamEntity;
 import z.hol.general.ConcurrentCanceler;
 import z.hol.uploader.bridge.Bridge;
+import z.hol.uploader.bridge.StreamBridge;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 /**
  * 流上传
  * Created by holmes on 10/15/14.
  */
-public class StreamUploader implements Uploader{
+public class StreamUploader extends InputStreamEntity implements Uploader, Runnable{
 
     /**
      * 上传的流
      */
-    private InputStream mSrcStream;
-    private Bridge mBridge;
+    protected InputStream mSrcStream;
+    private StreamBridge mBridge;
 
     /** 要上传的总大小 */
     private long mTotal = 0l;
@@ -25,10 +28,40 @@ public class StreamUploader implements Uploader{
     /** 取消器 */
     private ConcurrentCanceler mCanceler;
 
-    public StreamUploader(InputStream inputStream, Bridge bridge){
+    /** 是否完成 */
+    private boolean mConsumed = false;
+
+    /** id */
+    private Integer mId;
+
+    private UploadUiHandler mUiHandler;
+
+    public StreamUploader(InputStream inputStream, long length, StreamBridge bridge){
+        super(inputStream, length);
+        mTotal = length;
         mSrcStream = inputStream;
         mBridge = bridge;
         mCanceler = new ConcurrentCanceler();
+    }
+
+    public void setUiHandler(UploadUiHandler handler){
+        mUiHandler = handler;
+    }
+
+    @Override
+    public int getId() {
+        if (mId == null){
+            mId = super.hashCode();
+        }
+        return mId.intValue();
+    }
+
+    @Override
+    public void setId(int id) {
+        if (mId == null ||
+                mId.intValue() != id){
+            mId = id;
+        }
     }
 
     /**
@@ -66,7 +99,11 @@ public class StreamUploader implements Uploader{
 
     @Override
     public void setBridge(Bridge bridge) {
-        mBridge = bridge;
+        if (bridge instanceof StreamBridge){
+            mBridge = (StreamBridge) bridge;
+        }else {
+            throw new IllegalArgumentException("Only StreamBridge allowed!");
+        }
     }
 
     @Override
@@ -77,7 +114,13 @@ public class StreamUploader implements Uploader{
     @Override
     public void uploader() {
         mCanceler.restore();
-        internalUploader();
+        onUploadStart();
+        //internalUploader();
+    }
+
+    @Override
+    public void run() {
+
     }
 
     @Override
@@ -90,13 +133,14 @@ public class StreamUploader implements Uploader{
     }
 
     /**
-     * 上传
+     * 上传, 请在子类中执行
      */
-    protected void internalUploader(){
+    protected void internalUploader(OutputStream out){
         if (mBridge == null){
             onError(1);
             return;
         }
+        mBridge.setOutStream(out);
 
         byte[] buff = new byte[4096];
         int readed = -1;
@@ -141,13 +185,43 @@ public class StreamUploader implements Uploader{
             }
         }
 
-        onUploaderFinished();
+        onUploadFinished();
+    }
+
+    @Override
+    public void writeTo(OutputStream outstream) throws IOException {
+        //super.writeTo(outstream);
+        internalUploader(outstream);
+        this.mConsumed = true;
+    }
+
+    @Override
+    public boolean isStreaming() {
+        return !this.mConsumed;
+    }
+
+    @Override
+    public void consumeContent() throws IOException {
+        this.mConsumed = true;
+        mSrcStream.close();
+    }
+
+    /**
+     * 上传开始
+     */
+    protected void onUploadStart(){
+        if (mUiHandler != null){
+            mUiHandler.uploadStart(getId());
+        }
     }
 
     /**
      * 上传完成，不一定是成功, 只是过程结束了
      */
-    protected void onUploaderFinished(){
+    protected void onUploadFinished(){
+        if (mUiHandler != null){
+            mUiHandler.uploadFinished(getId());
+        }
 
     }
 
@@ -156,6 +230,9 @@ public class StreamUploader implements Uploader{
      * @param code
      */
     protected void onError(int code){
+        if (mUiHandler != null){
+            mUiHandler.error(getId(), code);
+        }
 
     }
 
@@ -163,6 +240,9 @@ public class StreamUploader implements Uploader{
      * 完成
      */
     protected void onCompleted(){
+        if (mUiHandler != null){
+            mUiHandler.completed(getId());
+        }
 
     }
 
@@ -172,6 +252,9 @@ public class StreamUploader implements Uploader{
      * @param current
      */
     protected void onProgress(long total, long current){
+        if (mUiHandler != null){
+            mUiHandler.progress(getId(), total, current);
+        }
 
     }
 
@@ -179,6 +262,9 @@ public class StreamUploader implements Uploader{
      * 被取消
      */
     protected void onCancel(){
+        if (mUiHandler != null){
+            mUiHandler.cancel(getId());
+        }
 
     }
 }

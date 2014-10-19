@@ -22,7 +22,9 @@ public abstract class StreamBridge implements Bridge{
      * 在里面给 this.outStream 赋值
      * @param out
      */
-    public abstract void setOutStream(OutputStream out);
+    public void setOutStream(OutputStream out){
+        outStream = out;
+    }
 
     public void setCloseStreamOnFinish(boolean close){
         mCloseStreamOnFinish = close;
